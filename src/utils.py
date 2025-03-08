@@ -106,7 +106,7 @@ def test(model, dataloader, path):
     plt.xlabel("Predicted Labels")
     plt.ylabel("True Labels")
     plt.tight_layout()
-    plt.savefig(os.path.join(path, f"{id}_confusion_matrix.png"))
+    plt.savefig(os.path.join(path, "confusion_matrix.png"))
     plt.cla()
     plt.close(disp.figure_)
 
