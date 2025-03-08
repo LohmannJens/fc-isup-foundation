@@ -1,0 +1,6 @@
+data/logs
+data/tests
+data/workflows
+data/site_info.json
+
+__pycache__
