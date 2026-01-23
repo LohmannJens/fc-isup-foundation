@@ -23,6 +23,13 @@ def label_to_output(tensor):
     return result
 
 
+def divide_weights(data, divisor):
+    if isinstance(data, list):
+        return [divide_weights(item, divisor) for item in data]
+    else:
+        return data / divisor
+
+
 def fed_avg(state_dicts, n_data_clients):
     """
         Basic Federated Averaging method. Average across the given models by

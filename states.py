@@ -6,10 +6,10 @@ import pandas as pd
 
 from torch.utils.data import DataLoader
 
-from FeatureCloud.app.engine.app import AppState, app_state, Role
+from FeatureCloud.app.engine.app import AppState, app_state, Role, SMPCOperation
 
 from src.classes import Client, ISUPDataset, ISUPPredictor
-from src.utils import fed_avg, test
+from src.utils import fed_avg, test, divide_weights
 
 
 
@@ -97,14 +97,21 @@ class TrainState(AppState):
 
     def run(self):
         client = self.load('client')
+        config = self.load('config')
 
         # run training for n epochs on each client
         client.train()
     
         # send model state for aggregation into central model
-        model_state = client.model.state_dict()
-        n_data = client.n_train_data
-        self.send_data_to_coordinator([model_state, n_data], send_to_self=True, use_smpc=False)
+        if config['use_smpc']:
+            state_dict = client.model.state_dict()
+            list_state_dict = {k: v.tolist() for k, v in state_dict.items()}
+            self.send_data_to_coordinator(list_state_dict, send_to_self=True, use_smpc=config['use_smpc'], memo="W")
+            
+        else:
+            model_state = client.model.state_dict()
+            n_data = client.n_train_data
+            self.send_data_to_coordinator([model_state, n_data], send_to_self=True, use_smpc=False)
         
         self.store(key='client', value=client)
 
@@ -121,16 +128,26 @@ class AggregateState(AppState):
 
 
     def run(self):
-        # await weights of clients
-        list_of_lists = self.gather_data(is_json=False)
-        list_of_states = list()
-        n_data_clients = list()
-        for l in list_of_lists:
-            list_of_states.append(l[0])
-            n_data_clients.append(l[1])
+        config = self.load('config')
 
-        # aggregate the weights of the clients by basic fed_avg
-        server_state = fed_avg(list_of_states, n_data_clients)
+        # aggregate client weights and average
+        # when smpc is used FedAvg cannot be used, because number of datapoints per client is not shared
+        if config['use_smpc']:
+            server_state = self.aggregate_data(operation=SMPCOperation.ADD, use_smpc=config['use_smpc'], memo="W")
+            num_clients = len(self.clients)
+            for key in server_state:
+                server_state[key] = divide_weights(server_state[key], num_clients)
+
+        else:
+            list_of_lists = self.gather_data(is_json=False)
+            list_of_states = list()
+            n_data_clients = list()
+            for l in list_of_lists:
+                list_of_states.append(l[0])
+                n_data_clients.append(l[1])
+
+            # aggregate the weights of the clients by basic fed_avg
+            server_state = fed_avg(list_of_states, n_data_clients)
 
         # distribute aggregated model to the clients
         self.broadcast_data(server_state, send_to_self=True)
@@ -153,13 +170,19 @@ class ValidateState(AppState):
 
         # receive aggregated model by the server
         new_weights = self.await_data(n=1, is_json=False)
+
+        if config['use_smpc']:
+            new_weights = {
+                k: torch.tensor(v).float() for k, v in new_weights.items()
+            }
+
         client.model.load_state_dict(new_weights)
 
         # start validation routine
         client.validate()
         client.epoch = client.epoch + 1
 
-        self.send_data_to_coordinator(client.train_metrics["val_acc"], send_to_self=True, use_smpc=False)
+        self.send_data_to_coordinator(client.train_metrics['val_acc'][-1], send_to_self=True, use_smpc=config['use_smpc'])
 
         self.store(key='client', value=client)
 
@@ -186,18 +209,18 @@ class SaveModelState(AppState):
         client = self.load('client')
         config = self.load('config')
 
-        best_val_acc = self.load("best_val_acc")
+        best_val_acc = self.load('best_val_acc')
 
         # get monitored values per client
-        list_of_metrics = self.gather_data(is_json=False)
+        aggr_metric = self.aggregate_data(operation=SMPCOperation.ADD, use_smpc=config['use_smpc'])
 
         # average over all clients and get highest value
-        mean_val_acc = np.mean(list_of_metrics)
+        mean_val_acc = aggr_metric / len(self.clients)
 
         # check if newest model is better and save if True
         if mean_val_acc > best_val_acc:
-           self.store(key="best_model", value=client.model.state_dict())
-           self.store(key="best_val_acc", value=mean_val_acc)
+           self.store(key='best_model', value=client.model.state_dict())
+           self.store(key='best_val_acc', value=mean_val_acc)
 
         if client.epoch != config['epochs']:
             return 'train'

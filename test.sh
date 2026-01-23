@@ -1,0 +1,2 @@
+featurecloud test start --client-dirs testdata/client1,testdata/client2 --generic-dir testdata/generic \
+    --app-image fc-isup-foundation --channel=local --query-interval=3 --download-results=results --print-logs

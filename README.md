@@ -36,6 +36,7 @@ input_channels: # int, number of input_channels for the classification layer (eq
 lr: # float, learning rate to use for the optimizer (SGD is implemented right now).
 epochs: # int, number of epochs to train the model. We assume number of epochs == number of communcations
 batch_size: # int, batch size to be used for loading the datasets.
+use_smpc: # bool, indicate if secure multi party compuation (SMPC) should be used.
 
 ```
 
