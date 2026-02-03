@@ -5,6 +5,8 @@ A FeatureCloud app for communication efficient prediction of ISUP grades [1] usi
 It was developed based on the first step of eCaReNet [2] for prostate cancer relapse
 over time prediction.
 
+NOTE: the application was developed and tested with featurecloud version 0.1.0, which requires Docker 28.5 or lower.
+
 
 ## Input
 In each client the following folders and files must be given:
